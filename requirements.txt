@@ -1,4 +1,6 @@
+streamlit
 yfinance
 pandas
-streamlit
 plotly
+feedparser
+numpy==1.26.4
