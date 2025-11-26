@@ -3,14 +3,16 @@ import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import feedparser  # Pour lire les flux RSS de Google News
+import feedparser
+from datetime import datetime, timedelta
+import time
 
 # ==========================================
-# 1. CONFIGURATION & DONNÉES DE SECOURS
+# 1. CONFIGURATION
 # ==========================================
-st.set_page_config(page_title="Terminal Ingénieur Financier", layout="wide", page_icon="📈")
+st.set_page_config(page_title="Algo Trading - Weighted Model", layout="wide", page_icon="💎")
 
-# Dictionnaire des actions (Tickers Yahoo Finance)
+# Liste nettoyée (Sans LVMH ni BNP)
 ACTIONS = {
     "TotalEnergies": "TTE.PA",
     "Hermès": "RMS.PA",
@@ -19,271 +21,303 @@ ACTIONS = {
     "Airbus": "AIR.PA"
 }
 
-# Données de "Fallback" (Sauvegarde) si l'API Yahoo ne répond pas
-BACKUP_DATA = {
-    "TTE.PA": {"per": 7.5, "yield": 0.05, "secteur_per": 11},
-    "RMS.PA": {"per": 48.0, "yield": 0.01, "secteur_per": 25},
-    "DSY.PA": {"per": 35.0, "yield": 0.005, "secteur_per": 30},
-    "SOP.PA": {"per": 12.0, "yield": 0.02, "secteur_per": 18},
-    "AIR.PA": {"per": 25.0, "yield": 0.015, "secteur_per": 22}
-}
-
 
 # ==========================================
-# 2. FONCTIONS D'ACQUISITION DE DONNÉES
+# 2. FONCTIONS DONNÉES & CONSENSUS
 # ==========================================
-def get_historical_data(ticker):
-    """Télécharge l'historique des prix sur 2 ans"""
+def get_data_and_consensus(ticker):
+    """
+    Récupère historique + infos fondamentales (Dividende/Rendement) + CONSENSUS
+    """
     stock = yf.Ticker(ticker)
+
+    # 1. Historique
     df = stock.history(period="2y")
-    return df
 
+    # Récupération du dernier prix connu (pour le calcul du rendement)
+    if not df.empty:
+        last_price = df['Close'].iloc[-1]
+    else:
+        last_price = 0
 
-def get_fundamental_data(ticker):
-    """
-    Récupère les fondamentaux en temps réel avec Failover & Correction d'échelle.
-    """
-    stock = yf.Ticker(ticker)
+    # 2. Infos Fondamentales & Consensus
     try:
         info = stock.info
-        per = info.get('trailingPE') or info.get('forwardPE')
-        div_yield = info.get('dividendYield')
 
-        if per is None or div_yield is None:
-            raise ValueError("Données manquantes")
+        # Consensus
+        rec_key = info.get('recommendationKey', 'none')
+        target_price = info.get('targetMeanPrice', 0)
 
-        # --- CORRECTIF RENDEMENT ---
-        # Si Yahoo renvoie "6.08" (pourcentage brut), on convertit en "0.0608" (décimal)
-        if div_yield > 1:
-            div_yield = div_yield / 100
+        # Mapping Consensus
+        consensus_score = 2.5
+        if rec_key == 'strong_buy':
+            consensus_score = 5
+        elif rec_key == 'buy':
+            consensus_score = 4
+        elif rec_key == 'outperform':
+            consensus_score = 4
+        elif rec_key == 'hold':
+            consensus_score = 2.5
+        elif rec_key == 'underperform':
+            consensus_score = 1
+        elif rec_key == 'sell':
+            consensus_score = 0
 
-        return {
-            "per": round(per, 2),
-            "yield": div_yield,
-            "secteur_per": BACKUP_DATA[ticker]["secteur_per"],
-            "source": "🟢 API Live"
+        # Fondamentaux
+        per = info.get('trailingPE') or info.get('forwardPE', 0)
+
+        # --- CORRECTION DU RENDEMENT ---
+        # On récupère le montant en Euros (ex: 3.50)
+        div_rate = info.get('dividendRate')
+
+        # Si Yahoo ne donne pas le montant, on essaie 'trailingAnnualDividendRate'
+        if div_rate is None:
+            div_rate = info.get('trailingAnnualDividendRate', 0)
+
+        # CALCUL MANUEL DU RENDEMENT (Plus fiable)
+        # Rendement = Dividende / Prix Actuel
+        if div_rate and last_price > 0:
+            div_yield = div_rate / last_price
+        else:
+            # Si calcul impossible, fallback sur la donnée Yahoo
+            div_yield = info.get('dividendYield', 0)
+            if div_yield is None: div_yield = 0
+            if div_yield > 1: div_yield = div_yield / 100
+
+        fonda = {
+            "per": per,
+            "yield": div_yield,  # Format décimal (ex: 0.05 pour 5%)
+            "div_amt": div_rate,  # Montant en Euros
+            "consensus_txt": rec_key.replace('_', ' ').upper(),
+            "consensus_score": consensus_score,
+            "target_price": target_price
         }
-    except Exception:
-        data = BACKUP_DATA[ticker]
-        data["source"] = "🟠 Mode Secours (Offline)"
-        return data
+    except Exception as e:
+        # print(f"Erreur data: {e}") # Debug
+        fonda = {"per": 0, "yield": 0, "div_amt": 0, "consensus_txt": "INCONNU", "consensus_score": 2.5,
+                 "target_price": 0}
+
+    return df, fonda
 
 
-def get_market_news(company_name):
-    """
-    Récupère les news Google Actualités et fait une analyse de sentiment basique.
-    """
+def get_fresh_news(company_name):
+    """ Récupère les news de moins de 24h """
     query = company_name.replace(" ", "+")
-    rss_url = f"https://news.google.com/rss/search?q={query}+bourse&hl=fr&gl=FR&ceid=FR:fr"
-
+    rss_url = f"https://news.google.com/rss/search?q={query}+bourse+finance&hl=fr&gl=FR&ceid=FR:fr"
     feed = feedparser.parse(rss_url)
+
     news_list = []
-    sentiment_score = 0
+    positive_words = ['hausse', 'bondit', 'record', 'achat', 'surperforme', 'contrat', 'succès', 'approbation',
+                      'dividende']
+    negative_words = ['chute', 'baisse', 'perte', 'alerte', 'dette', 'procès', 'échec', 'sanction', 'démission']
+    time_threshold = datetime.now() - timedelta(days=1)
 
-    # Mots-clés simples pour la démo
-    positive_words = ['hausse', 'bondit', 'record', 'profit', 'achat', 'surperforme', 'dividende', 'contrat', 'succès']
-    negative_words = ['chute', 'baisse', 'perte', 'recule', 'crise', 'alerte', 'dette', 'procès', 'échec']
+    raw_sentiment = 0
+    count = 0
 
-    for entry in feed.entries[:5]:  # Top 5 news
+    for entry in feed.entries:
+        try:
+            pub_date = datetime.fromtimestamp(time.mktime(entry.published_parsed))
+        except:
+            continue
+
+        if pub_date < time_threshold: continue  # Filtre 24h
+
         title = entry.title
         link = entry.link
-        published = entry.published
 
-        sentiment = "Neutre"
         color = "grey"
-
+        score_mod = 0
         title_lower = title.lower()
-        if any(word in title_lower for word in positive_words):
-            sentiment = "Positif"
+
+        if any(w in title_lower for w in positive_words):
             color = "green"
-            sentiment_score += 1
-        elif any(word in title_lower for word in negative_words):
-            sentiment = "Négatif"
+            score_mod = 1
+        elif any(w in title_lower for w in negative_words):
             color = "red"
-            sentiment_score -= 1
+            score_mod = -1
 
-        news_list.append({
-            "title": title,
-            "link": link,
-            "date": published,
-            "sentiment": sentiment,
-            "color": color
-        })
+        raw_sentiment += score_mod
+        count += 1
 
-    return news_list, sentiment_score
+        news_list.append({"title": title, "date": pub_date.strftime('%H:%M'), "link": link, "color": color})
+        if count >= 5: break
+
+    if raw_sentiment > 0:
+        final_news_score = 4 + (min(raw_sentiment, 2) * 0.5)
+    elif raw_sentiment < 0:
+        final_news_score = 1
+    else:
+        final_news_score = 2.5
+
+    return news_list, final_news_score
 
 
 # ==========================================
-# 3. MOTEUR DE CALCUL (INDICATEURS)
+# 3. INDICATEURS TECHNIQUES
 # ==========================================
 def calculate_indicators(df):
-    # 1. Momentum (Demande du prof)
-    df['Momentum'] = df['Close'].diff(10)
-
-    # 2. Volume Moyen (Demande du prof)
-    df['Vol_Moyen'] = df['Volume'].rolling(window=20).mean()
-
-    # 3. RSI
+    # RSI
     delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
 
-    # 4. SMA (Moyennes Mobiles)
-    df['SMA_200'] = df['Close'].rolling(window=200).mean()
+    # Bollinger
+    df['SMA_20'] = df['Close'].rolling(20).mean()
+    df['STD_20'] = df['Close'].rolling(20).std()
+    df['Upper'] = df['SMA_20'] + (2 * df['STD_20'])
+    df['Lower'] = df['SMA_20'] - (2 * df['STD_20'])
 
-    # 5. Bandes de Bollinger
-    df['SMA_20'] = df['Close'].rolling(window=20).mean()
-    df['STD_20'] = df['Close'].rolling(window=20).std()
-    df['Bollinger_Upper'] = df['SMA_20'] + (2 * df['STD_20'])
-    df['Bollinger_Lower'] = df['SMA_20'] - (2 * df['STD_20'])
+    # SMA 200
+    df['SMA_200'] = df['Close'].rolling(200).mean()
 
     return df
 
 
-def generate_signal(df, fonda_data, news_score):
-    """Algorithme de décision global"""
+# ==========================================
+# 4. ALGORITHME DE PONDÉRATION
+# ==========================================
+def calculate_weighted_score(df, fonda, news_score):
     last = df.iloc[-1]
-    score = 0
     reasons = []
 
-    # --- ANALYSE TECHNIQUE ---
-    if last['Momentum'] > 0:
-        score += 1
-        reasons.append("Technique : Momentum Positif (Hausse)")
+    # --- A. Score TECHNIQUE (40%) ---
+    tech_points = 0
 
-    if last['Volume'] > last['Vol_Moyen']:
-        score += 0.5
-        reasons.append("Technique : Volume fort (Mouvement validé)")
-
-    if last['RSI'] < 30:
-        score += 1
-        reasons.append("Technique : RSI en survente (Opportunité d'achat)")
+    # 1. RSI
+    if last['RSI'] < 35:
+        tech_points += 1
+        reasons.append("Tech: RSI bas (Rebond possible)")
     elif last['RSI'] > 70:
-        score -= 1
-        reasons.append("Technique : RSI en surachat (Attention)")
+        tech_points -= 1
+        reasons.append("Tech: RSI trop haut (Risque)")
+    else:
+        tech_points += 0.5
 
-    if last['Close'] < last['Bollinger_Lower']:
-        score += 1.5
-        reasons.append("Technique : Prix sous Bollinger Basse (Rebond probable)")
-    elif last['Close'] > last['Bollinger_Upper']:
-        score -= 1
-        reasons.append("Technique : Prix dépasse Bollinger Haute (Surchauffe)")
+    # 2. Bollinger
+    if last['Close'] < last['Lower']:
+        tech_points += 1.5
+        reasons.append("Tech: Prix sous Bollinger (Achat fort)")
+    elif last['Close'] > last['Upper']:
+        tech_points -= 1
+        reasons.append("Tech: Prix sur Bollinger (Vente)")
+    else:
+        tech_points += 0.5
 
+    # 3. Tendance
     if last['Close'] > last['SMA_200']:
-        score += 0.5
-        reasons.append("Technique : Tendance de fond haussière (> SMA200)")
+        tech_points += 1
+        reasons.append("Tech: Tendance long terme haussière")
 
-    # --- ANALYSE FONDAMENTALE ---
-    if fonda_data['per'] < fonda_data['secteur_per']:
-        score += 1
-        reasons.append(f"Fondamental : Action sous-évaluée (PER {fonda_data['per']} < Secteur)")
+    tech_score_5 = (max(0, tech_points) / 4) * 5
 
-    if fonda_data['yield'] > 0.03:
-        score += 1
-        reasons.append(f"Fondamental : Bon rendement ({fonda_data['yield'] * 100:.2f}%)")
+    # --- B. Score FONDAMENTAL (20%) ---
+    fund_points = 0
+    if fonda['per'] > 0 and fonda['per'] < 15:
+        fund_points += 1
+    elif fonda['per'] > 30:
+        fund_points -= 1
 
-    # --- ANALYSE SENTIMENT (NEWS) ---
-    if news_score > 0:
-        score += 0.5
-        reasons.append("Sentiment : Actualité favorable (Mots-clés positifs)")
-    elif news_score < 0:
-        score -= 0.5
-        reasons.append("Sentiment : Actualité inquiétante (Mots-clés négatifs)")
+    if fonda['yield'] > 0.03: fund_points += 1
 
-    return score, reasons
+    fund_score_5 = (max(0, fund_points) / 2) * 5
+
+    # --- C. CALCUL FINAL ---
+    final_score = (
+            (tech_score_5 * 0.40) +
+            (fonda['consensus_score'] * 0.20) +
+            (fund_score_5 * 0.20) +
+            (news_score * 0.20)
+    )
+
+    return round(final_score, 2), tech_score_5, fonda['consensus_score'], reasons
 
 
 # ==========================================
-# 4. INTERFACE GRAPHIQUE (STREAMLIT)
+# 5. INTERFACE
 # ==========================================
-# Sidebar
 st.sidebar.title("Paramètres")
-choix_nom = st.sidebar.selectbox("Choisir l'action à analyser", list(ACTIONS.keys()))
-ticker = ACTIONS[choix_nom]
+choix = st.sidebar.selectbox("Action", list(ACTIONS.keys()))
 
-st.title(f"📊 Analyse Financière : {choix_nom}")
+st.title(f"🧠 Analyse Avancée : {choix}")
 
-# Chargement
-with st.spinner('Analyse des données en cours...'):
-    df = get_historical_data(ticker)
+with st.spinner('Analyse multi-factorielle en cours...'):
+    df, fonda = get_data_and_consensus(ACTIONS[choix])
     df = calculate_indicators(df)
-    fonda = get_fundamental_data(ticker)
-    news_list, news_score = get_market_news(choix_nom)
+    news, news_score_5 = get_fresh_news(choix)
+
+    global_score, tech_sc, cons_sc, args = calculate_weighted_score(df, fonda, news_score_5)
 
     current_price = df['Close'].iloc[-1]
-    var_day = df['Close'].iloc[-1] - df['Close'].iloc[-2]
 
-# Métriques du haut
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Prix Actuel", f"{current_price:.2f} €", f"{var_day:.2f} €")
-col2.metric("PER (Yahoo)", f"{fonda['per']}")
-col3.metric("Rendement", f"{fonda['yield'] * 100:.2f}%")
-col4.metric("Source Données", fonda['source'])
+# --- DASHBOARD DU HAUT (MODIFIÉ) ---
+c1, c2, c3, c4 = st.columns(4)
 
-# --- GRAPHIQUES ---
-st.subheader("Analyse Technique Multi-Indicateurs")
+# Colonne 1 : Prix
+c1.metric("Prix", f"{current_price:.2f} €", f"Cible: {fonda['target_price']} €")
 
-fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
-                    vertical_spacing=0.05,
-                    row_heights=[0.5, 0.25, 0.25],
-                    subplot_titles=("Prix, Moyennes Mobiles & Bollinger", "Momentum", "RSI"))
+# Colonne 2 : Consensus
+c2.metric("Consensus Analystes", fonda['consensus_txt'], f"{cons_sc}/5")
 
-# 1. PRIX + BB + SMA
-fig.add_trace(go.Scatter(x=df.index, y=df['Bollinger_Upper'], line=dict(color='gray', width=1), showlegend=False),
-              row=1, col=1)
-fig.add_trace(go.Scatter(x=df.index, y=df['Bollinger_Lower'], line=dict(color='gray', width=1), fill='tonexty',
-                         fillcolor='rgba(128, 128, 128, 0.1)', name='Bandes Bollinger'), row=1, col=1)
-fig.add_trace(
-    go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Prix'), row=1,
-    col=1)
-fig.add_trace(go.Scatter(x=df.index, y=df['SMA_200'], line=dict(color='blue', width=1), name='SMA 200'), row=1, col=1)
+# Colonne 3 : Dividende (Montant en €) - MODIFIÉ
+c3.metric("Dividende (Annuel)", f"{fonda['div_amt']} €")
 
-# 2. MOMENTUM
-colors_mom = ['green' if val > 0 else 'red' for val in df['Momentum']]
-fig.add_trace(go.Bar(x=df.index, y=df['Momentum'], marker_color=colors_mom, name='Momentum'), row=2, col=1)
+# Colonne 4 : Rendement (%) - MODIFIÉ
+c4.metric("Rendement", f"{fonda['yield'] * 100:.2f}%")
 
-# 3. RSI
-fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='purple'), name='RSI'), row=3, col=1)
-fig.add_hline(y=70, line_dash="dot", row=3, col=1, line_color="red")
-fig.add_hline(y=30, line_dash="dot", row=3, col=1, line_color="green")
+# --- JAUGES DE SCORE ---
+st.markdown("### 🎯 Score de Confiance Global")
+st.progress(global_score / 5)
+st.write(f"**NOTE FINALE : {global_score} / 5.0**")
 
-fig.update_layout(xaxis_rangeslider_visible=False, height=800, showlegend=True, margin=dict(l=20, r=20, t=40, b=20))
-st.plotly_chart(fig, width="stretch")
+if global_score >= 3.8:
+    st.success("### ✅ ACHAT FORT (STRONG BUY)")
+elif global_score >= 3.0:
+    st.info("### ↗️ ACHAT PRUDENT (ACCUMULATE)")
+elif global_score <= 1.5:
+    st.error("### ⛔ VENTE FORTE")
+elif global_score <= 2.2:
+    st.warning("### ↘️ VENTE / ALLÉGER")
+else:
+    st.write("### ⏸️ NEUTRE / ATTENTE")
 
-# --- ACTUALITÉS ---
-st.markdown("---")
-col_news, col_verdict = st.columns([1, 1])
+# --- DÉTAILS ---
+col_g, col_n = st.columns([2, 1])
 
-with col_news:
-    st.subheader(f"📰 Actualités : {choix_nom}")
-    if not news_list:
-        st.info("Aucune actualité récente trouvée.")
-    for item in news_list:
-        with st.expander(f"{item['date'][0:16]} - {item['title']}"):
-            st.write(f"Sentiment: :{item['color']}[{item['sentiment']}]")
-            st.markdown(f"[Lire l'article]({item['link']})")
+with col_g:
+    st.subheader("Analyse Technique")
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3])
 
-# --- VERDICT ---
-score_final, arguments = generate_signal(df, fonda, news_score)
+    # Prix + BB
+    fig.add_trace(
+        go.Candlestick(x=df.index, open=df['Open'], close=df['Close'], high=df['High'], low=df['Low'], name="Prix"),
+        row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['Upper'], line=dict(color='gray', width=1), showlegend=False), row=1,
+                  col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['Lower'], line=dict(color='gray', width=1), fill='tonexty',
+                             fillcolor='rgba(200,200,200,0.1)', name="Bollinger"), row=1, col=1)
 
-with col_verdict:
-    st.subheader("🤖 Verdict de l'Algorithme")
-    st.metric("Score de Confiance", f"{score_final} / 7")
+    # RSI
+    fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='purple'), name="RSI"), row=2, col=1)
+    fig.add_hline(y=30, line_color="green", row=2, col=1)
+    fig.add_hline(y=70, line_color="red", row=2, col=1)
 
-    if score_final >= 3.5:
-        st.success("### 🚀 RECOMMANDATION : ACHAT")
-    elif score_final <= 0:
-        st.error("### 🔻 RECOMMANDATION : VENTE")
-    else:
-        st.warning("### ⏸️ RECOMMANDATION : NEUTRE")
+    fig.update_layout(height=600, xaxis_rangeslider_visible=False)
+    st.plotly_chart(fig, width="stretch")
 
-    st.write("**Facteurs de décision :**")
-    for arg in arguments:
-        if "Technique" in arg:
-            st.caption(f"📈 {arg}")
-        elif "Fondamental" in arg:
-            st.caption(f"🏢 {arg}")
-        else:
-            st.caption(f"📰 {arg}")
+with col_n:
+    st.subheader("Actualités (< 24h)")
+    if len(news) == 0:
+        st.caption("Aucune news détectée depuis 24h.")
+
+    for n in news:
+        st.markdown(f"**{n['date']}** - :{n['color']}[{n['title']}]")
+        st.markdown(f"[Lire]({n['link']})")
+        st.divider()
+
+    st.write("---")
+    st.write("**Facteurs de Décision :**")
+    for a in args:
+        st.caption(f"{a}")
