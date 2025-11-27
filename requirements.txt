@@ -4,3 +4,4 @@ pandas
 plotly
 feedparser
 numpy==1.26.4
+streamlit-autorefresh
