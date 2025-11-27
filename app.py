@@ -12,7 +12,7 @@ import time
 # ==========================================
 st.set_page_config(page_title="Algo Trading - Weighted Model", layout="wide", page_icon="💎")
 
-# Liste nettoyée (Sans LVMH ni BNP)
+# Liste nettoyée
 ACTIONS = {
     "TotalEnergies": "TTE.PA",
     "Hermès": "RMS.PA",
@@ -34,7 +34,7 @@ def get_data_and_consensus(ticker):
     # 1. Historique
     df = stock.history(period="2y")
 
-    # Récupération du dernier prix connu (pour le calcul du rendement)
+    # Récupération du dernier prix connu
     if not df.empty:
         last_price = df['Close'].iloc[-1]
     else:
@@ -67,33 +67,26 @@ def get_data_and_consensus(ticker):
         per = info.get('trailingPE') or info.get('forwardPE', 0)
 
         # --- CORRECTION DU RENDEMENT ---
-        # On récupère le montant en Euros (ex: 3.50)
         div_rate = info.get('dividendRate')
-
-        # Si Yahoo ne donne pas le montant, on essaie 'trailingAnnualDividendRate'
         if div_rate is None:
             div_rate = info.get('trailingAnnualDividendRate', 0)
 
-        # CALCUL MANUEL DU RENDEMENT (Plus fiable)
-        # Rendement = Dividende / Prix Actuel
         if div_rate and last_price > 0:
             div_yield = div_rate / last_price
         else:
-            # Si calcul impossible, fallback sur la donnée Yahoo
             div_yield = info.get('dividendYield', 0)
             if div_yield is None: div_yield = 0
             if div_yield > 1: div_yield = div_yield / 100
 
         fonda = {
             "per": per,
-            "yield": div_yield,  # Format décimal (ex: 0.05 pour 5%)
-            "div_amt": div_rate,  # Montant en Euros
+            "yield": div_yield,
+            "div_amt": div_rate,
             "consensus_txt": rec_key.replace('_', ' ').upper(),
             "consensus_score": consensus_score,
             "target_price": target_price
         }
     except Exception as e:
-        # print(f"Erreur data: {e}") # Debug
         fonda = {"per": 0, "yield": 0, "div_amt": 0, "consensus_txt": "INCONNU", "consensus_score": 2.5,
                  "target_price": 0}
 
@@ -101,7 +94,7 @@ def get_data_and_consensus(ticker):
 
 
 def get_fresh_news(company_name):
-    """ Récupère les news de moins de 24h """
+    """ Récupère les news de moins de 48h (MODIFIÉ) """
     query = company_name.replace(" ", "+")
     rss_url = f"https://news.google.com/rss/search?q={query}+bourse+finance&hl=fr&gl=FR&ceid=FR:fr"
     feed = feedparser.parse(rss_url)
@@ -110,7 +103,9 @@ def get_fresh_news(company_name):
     positive_words = ['hausse', 'bondit', 'record', 'achat', 'surperforme', 'contrat', 'succès', 'approbation',
                       'dividende']
     negative_words = ['chute', 'baisse', 'perte', 'alerte', 'dette', 'procès', 'échec', 'sanction', 'démission']
-    time_threshold = datetime.now() - timedelta(days=1)
+
+    # --- MODIFICATION ICI : 48 HEURES ---
+    time_threshold = datetime.now() - timedelta(hours=48)
 
     raw_sentiment = 0
     count = 0
@@ -121,7 +116,7 @@ def get_fresh_news(company_name):
         except:
             continue
 
-        if pub_date < time_threshold: continue  # Filtre 24h
+        if pub_date < time_threshold: continue
 
         title = entry.title
         link = entry.link
@@ -140,7 +135,7 @@ def get_fresh_news(company_name):
         raw_sentiment += score_mod
         count += 1
 
-        news_list.append({"title": title, "date": pub_date.strftime('%H:%M'), "link": link, "color": color})
+        news_list.append({"title": title, "date": pub_date.strftime('%d/%m %H:%M'), "link": link, "color": color})
         if count >= 5: break
 
     if raw_sentiment > 0:
@@ -177,7 +172,7 @@ def calculate_indicators(df):
 
 
 # ==========================================
-# 4. ALGORITHME DE PONDÉRATION
+# 4. ALGORITHME DE PONDÉRATION (MODIFIÉ POUR ÊTRE BAVARD)
 # ==========================================
 def calculate_weighted_score(df, fonda, news_score):
     last = df.iloc[-1]
@@ -186,43 +181,61 @@ def calculate_weighted_score(df, fonda, news_score):
     # --- A. Score TECHNIQUE (40%) ---
     tech_points = 0
 
-    # 1. RSI
+    # 1. RSI (Avec explication Neutre)
     if last['RSI'] < 35:
         tech_points += 1
         reasons.append("Tech: RSI bas (Rebond possible)")
     elif last['RSI'] > 70:
         tech_points -= 1
-        reasons.append("Tech: RSI trop haut (Risque)")
+        reasons.append("Tech: RSI trop haut (Risque de baisse)")
     else:
         tech_points += 0.5
+        reasons.append(f"Tech: RSI Neutre ({int(last['RSI'])}) - Zone stable")
 
-    # 2. Bollinger
+    # 2. Bollinger (Avec explication Neutre)
     if last['Close'] < last['Lower']:
         tech_points += 1.5
-        reasons.append("Tech: Prix sous Bollinger (Achat fort)")
+        reasons.append("Tech: Prix sous Bollinger (Signal d'Achat)")
     elif last['Close'] > last['Upper']:
         tech_points -= 1
-        reasons.append("Tech: Prix sur Bollinger (Vente)")
+        reasons.append("Tech: Prix sur Bollinger (Signal de Vente)")
     else:
         tech_points += 0.5
+        reasons.append("Tech: Prix dans les Bandes (Volatilité normale)")
 
-    # 3. Tendance
+    # 3. Tendance (Avec explication Baissière)
     if last['Close'] > last['SMA_200']:
         tech_points += 1
-        reasons.append("Tech: Tendance long terme haussière")
+        reasons.append("Tech: Tendance de fond Haussière (> SMA200)")
+    else:
+        reasons.append("Tech: Tendance de fond Baissière (< SMA200)")
 
     tech_score_5 = (max(0, tech_points) / 4) * 5
 
     # --- B. Score FONDAMENTAL (20%) ---
     fund_points = 0
+
+    # PER
     if fonda['per'] > 0 and fonda['per'] < 15:
         fund_points += 1
+        reasons.append(f"Fonda: Action pas chère (PER {fonda['per']:.1f})")
     elif fonda['per'] > 30:
         fund_points -= 1
+        reasons.append(f"Fonda: Action très chère (PER {fonda['per']:.1f})")
+    else:
+        reasons.append(f"Fonda: Valorisation Standard (PER {fonda['per']:.1f})")
 
-    if fonda['yield'] > 0.03: fund_points += 1
+    # Rendement
+    if fonda['yield'] > 0.03:
+        fund_points += 1
+        reasons.append(f"Fonda: Bon rendement ({fonda['yield'] * 100:.1f}%)")
+    else:
+        reasons.append(f"Fonda: Rendement faible/moyen ({fonda['yield'] * 100:.1f}%)")
 
     fund_score_5 = (max(0, fund_points) / 2) * 5
+
+    # --- Ajout raison Consensus ---
+    reasons.append(f"Consensus: Analystes '{fonda['consensus_txt']}'")
 
     # --- C. CALCUL FINAL ---
     final_score = (
@@ -252,19 +265,11 @@ with st.spinner('Analyse multi-factorielle en cours...'):
 
     current_price = df['Close'].iloc[-1]
 
-# --- DASHBOARD DU HAUT (MODIFIÉ) ---
+# --- DASHBOARD DU HAUT ---
 c1, c2, c3, c4 = st.columns(4)
-
-# Colonne 1 : Prix
 c1.metric("Prix", f"{current_price:.2f} €", f"Cible: {fonda['target_price']} €")
-
-# Colonne 2 : Consensus
 c2.metric("Consensus Analystes", fonda['consensus_txt'], f"{cons_sc}/5")
-
-# Colonne 3 : Dividende (Montant en €) - MODIFIÉ
 c3.metric("Dividende (Annuel)", f"{fonda['div_amt']} €")
-
-# Colonne 4 : Rendement (%) - MODIFIÉ
 c4.metric("Rendement", f"{fonda['yield'] * 100:.2f}%")
 
 # --- JAUGES DE SCORE ---
@@ -308,9 +313,9 @@ with col_g:
     st.plotly_chart(fig, width="stretch")
 
 with col_n:
-    st.subheader("Actualités (< 24h)")
+    st.subheader("Actualités (< 48h)")  # Titre mis à jour
     if len(news) == 0:
-        st.caption("Aucune news détectée depuis 24h.")
+        st.caption("Aucune news détectée depuis 48h.")
 
     for n in news:
         st.markdown(f"**{n['date']}** - :{n['color']}[{n['title']}]")
