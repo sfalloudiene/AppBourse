@@ -464,9 +464,8 @@ def show_analysis_page():
         current_price = df['Close'].iloc[-1]
 
     # KPI
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    kpi1, kpi3, kpi4 = st.columns(3)
     kpi1.metric("PRIX ACTUEL", f"{current_price:.2f} €", f"🎯 {fonda['target_price']} €")
-    kpi2.metric("CONSENSUS PRO", fonda['consensus_txt'], delta=None)
     kpi3.metric("DIVIDENDE", f"{fonda['div_amt']} €")
     kpi4.metric("RENDEMENT", f"{fonda['yield'] * 100:.2f}%")
 
