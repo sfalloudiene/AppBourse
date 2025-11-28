@@ -9,7 +9,7 @@ import time
 from streamlit_autorefresh import st_autorefresh
 
 # ==========================================
-# 1. CONFIGURATION & STYLE 
+# 1. CONFIGURATION & STYLE (CORRIGÉ)
 # ==========================================
 st.set_page_config(
     page_title="ESIG'Trade Terminal",
@@ -18,96 +18,99 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- CSS ULTRA PREMIUM ---
+# --- CSS PREMIUM CENTRALISÉ ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
-    /* FOND ANIMÉ */
+    /* FOND STATIC SOMBRE */
     .stApp {
         background: radial-gradient(circle at center top, #1a1c2e 0%, #090a0f 100%);
         overflow-x: hidden;
     }
 
-    /* ANIMATION D'ENTRÉE (FADE IN) */
-    .element-container, .stMarkdown, .stMetric {
-        animation: fadeInAnimation 1s ease-in-out;
-    }
-
-    @keyframes fadeInAnimation {
-        0% { opacity: 0; transform: translateY(20px); }
-        100% { opacity: 1; transform: translateY(0); }
-    }
-
-    /* BACKGROUND CHANDELIERS */
-    .trading-bg-animation {
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none;
-        background-image: linear-gradient(rgba(255, 75, 75, 0.05) 1px, transparent 1px),
-                          linear-gradient(90deg, rgba(255, 75, 75, 0.05) 1px, transparent 1px);
-        background-size: 60px 60px; perspective: 1000px; transform: rotateX(60deg) scale(2); opacity: 0.3;
-    }
-    .candle {
-        position: absolute; bottom: -150px; width: 6px; border-radius: 4px; opacity: 0.7;
-        animation: floatUp cubic-bezier(0.4, 0.0, 0.2, 1) infinite; filter: blur(2px);
-    }
-    .c-green { background: #00ff88; box-shadow: 0 0 20px #00ff88; }
-    .c-red { background: #ff3131; box-shadow: 0 0 20px #ff3131; }
-    @keyframes floatUp {
-        0% { transform: translateY(0) scale(1); opacity: 0; }
-        10% { opacity: 0.9; }
-        90% { opacity: 0.5; transform: translateY(-110vh) scale(3); }
-        100% { transform: translateY(-130vh) scale(4); opacity: 0; }
-    }
-
-    /* TICKER TAPE CORRIGÉ */
+    /* --- TICKER TAPE (CORRECTION Z-INDEX) --- */
     .ticker-wrap {
-        position: fixed; top: 0; left: 0; width: 100%; overflow: hidden; height: 40px; background-color: rgba(0,0,0,0.8); border-bottom: 1px solid #333; z-index: 9999;
+        position: fixed; 
+        top: 0; 
+        left: 0; 
+        width: 100%; 
+        overflow: hidden; 
+        height: 40px; 
+        background-color: rgba(0,0,0,0.95); /* Fond presque opaque */
+        border-bottom: 1px solid #333; 
+        z-index: 999999; /* Force le passage devant tout */
+        display: block; /* S'assure qu'il est affiché */
     }
-    .ticker { display: inline-block; line-height: 40px; white-space: nowrap; padding-right: 100%; box-sizing: content-box; animation: ticker 40s linear infinite; }
-    .ticker__item { display: inline-block; padding: 0 2rem; font-size: 0.9rem; color: #ccc; font-family: monospace; }
-    .up { color: #00ff88; } .down { color: #ff3131; }
+
+    .ticker { 
+        display: inline-block; 
+        line-height: 40px; 
+        white-space: nowrap; 
+        padding-right: 100%; 
+        box-sizing: content-box; 
+        animation: ticker 40s linear infinite; 
+    }
+
+    .ticker__item { 
+        display: inline-block; 
+        padding: 0 2rem; 
+        font-size: 0.9rem; 
+        color: #ccc; 
+        font-family: monospace; 
+        font-weight: bold; 
+    }
+
+    .up { color: #00ff88; } 
+    .down { color: #ff3131; }
 
     @keyframes ticker { 
         0% { transform: translate3d(0, 0, 0); } 
         100% { transform: translate3d(-100%, 0, 0); } 
     }
 
-    /* GLASSMORPHISM CARDS */
+    /* --- AUTRES STYLES --- */
+    /* Cartes */
     .feature-card {
-        background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 20px; padding: 30px; text-align: center; transition: transform 0.3s; height: 100%;
+        background: rgba(255, 255, 255, 0.03);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 20px;
+        padding: 30px;
+        text-align: center;
+        height: 100%;
     }
-    .feature-card:hover { transform: translateY(-10px); border-color: #FF4B4B; box-shadow: 0 10px 30px rgba(255, 75, 75, 0.2); }
     .feature-icon { font-size: 3em; margin-bottom: 15px; }
     .feature-title { font-weight: 800; font-size: 1.2em; color: white; margin-bottom: 10px; text-transform: uppercase; }
     .feature-desc { color: #aaa; font-size: 0.9em; }
 
-    /* BOUTON RÉACTEUR */
+    /* Bouton */
     div.stButton > button:first-child {
         width: 100%; border-radius: 60px; font-weight: 900; height: 5em; font-size: 1.8em;
         text-transform: uppercase; letter-spacing: 3px; color: white; border: none;
-        background: linear-gradient(135deg, #ff3131 0%, #ff914d 50%, #ff0f0f 100%);
-        box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.3), 0 0 30px rgba(255, 50, 50, 0.6);
-        transition: all 0.4s; position: relative; overflow: hidden; margin-top: 20px;
+        background: linear-gradient(135deg, #ff3131 0%, #ff914d 100%);
+        box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.2), 0 0 30px rgba(255, 50, 50, 0.4);
+        margin-top: 20px;
     }
-    div.stButton > button:first-child:hover { transform: scale(1.05); box-shadow: inset 0 0 30px rgba(255, 255, 255, 0.5), 0 0 60px rgba(255, 50, 50, 0.8); }
-
-    /* METRIQUES DASHBOARD */
-    div[data-testid="stMetric"], .glass-container {
-        background: rgba(255, 255, 255, 0.03) !important;
-        backdrop-filter: blur(12px); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1);
-        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); padding: 20px !important; transition: all 0.3s ease;
+    div.stButton > button:first-child:hover { 
+        box-shadow: inset 0 0 30px rgba(255, 255, 255, 0.4), 0 0 50px rgba(255, 50, 50, 0.6);
     }
-    div[data-testid="stMetric"]:hover { transform: translateY(-5px); border: 1px solid rgba(255, 75, 75, 0.5); }
-    div[data-testid="stMetricValue"] { font-size: 2.2em !important; font-weight: 800 !important; color: white; text-shadow: 0 0 10px rgba(255, 255, 255, 0.5); }
 
-    /* CENTRAGE DES IMAGES */
+    /* Centrage Images */
     div[data-testid="stImage"] { display: flex; justify-content: center; align-items: center; width: 100%; }
     div[data-testid="stImage"] > img { object-fit: contain; max-width: 100%; }
 
-    /* PROGRESS BAR PLASMA */
-    div[data-testid="stProgress"] > div > div { background: linear-gradient(90deg, #ff3131, #ff914d, #00ff88); box-shadow: 0 0 15px rgba(255, 145, 77, 0.6); height: 12px; border-radius: 10px; }
+    /* Métriques */
+    div[data-testid="stMetricValue"] { font-size: 2.2em !important; font-weight: 800 !important; color: white; }
+    div[data-testid="stMetric"], .glass-container {
+        background: rgba(255, 255, 255, 0.03) !important;
+        backdrop-filter: blur(12px); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 20px !important;
+    }
+
+    /* Progress Bar */
+    div[data-testid="stProgress"] > div > div { background: linear-gradient(90deg, #ff3131, #ff914d, #00ff88); height: 12px; border-radius: 10px; }
 
 </style>
 """, unsafe_allow_html=True)
@@ -279,7 +282,7 @@ def calculate_weighted_score(df, fonda, news_score):
 # ==========================================
 
 def show_home_page():
-    # --- TICKER TAPE SEULEMENT (PAS D'ANIMATION DE FOND) ---
+    # TICKER TAPE (SEUL ÉLÉMENT ANIMÉ)
     st.markdown("""
     <div class="ticker-wrap">
         <div class="ticker">
@@ -297,36 +300,11 @@ def show_home_page():
             <div class="ticker__item">TOTALENERGIES <span class="up">▲ 62.5 €</span></div>
         </div>
     </div>
-    <style>
-        /* Animation Ticker Infinie */
-        .ticker-wrap {
-            position: fixed; top: 0; left: 0; width: 100%; overflow: hidden; height: 40px; 
-            background-color: rgba(0,0,0,0.9); border-bottom: 1px solid #333; z-index: 9999;
-        }
-        .ticker { 
-            display: inline-block; line-height: 40px; white-space: nowrap; 
-            padding-right: 100%; box-sizing: content-box; 
-            animation: ticker 40s linear infinite; /* BOUCLE INFINIE */
-        }
-        .ticker__item { 
-            display: inline-block; padding: 0 2rem; font-size: 0.9rem; 
-            color: #ccc; font-family: monospace; font-weight: bold;
-        }
-        .up { color: #00ff88; } 
-        .down { color: #ff3131; }
-
-        @keyframes ticker { 
-            0% { transform: translate3d(0, 0, 0); } 
-            100% { transform: translate3d(-100%, 0, 0); } 
-        }
-    </style>
     """, unsafe_allow_html=True)
 
-    # Espace pour descendre le contenu sous le ticker
     st.markdown("<br><br><br><br><br>", unsafe_allow_html=True)
 
-    # --- SECTION HERO (LOGO - TITRE - BOUTON ALIGNÉS) ---
-    # Grille [1, 3, 1] pour un alignement parfait sur une ligne
+    # --- HERO SECTION (LOGO - TITRE - BOUTON) ---
     c_logo, c_hero, c_btn = st.columns([1, 3, 1], gap="medium")
 
     with c_logo:
@@ -336,7 +314,6 @@ def show_home_page():
             st.warning("⚠️ Logo")
 
     with c_hero:
-        # Titre et Sous-titre au centre
         st.markdown("""
         <div style="text-align: center;">
             <h1 style='color: white; font-size: 4.5em; font-weight: 900; letter-spacing: -2px; margin-bottom: 5px; text-shadow: 0 0 40px rgba(255, 75, 75, 0.4); line-height: 1.1; text-transform: uppercase;'>
@@ -349,16 +326,14 @@ def show_home_page():
         """, unsafe_allow_html=True)
 
     with c_btn:
-        # Bouton "Lancer" à droite, aligné verticalement avec un spacer
         st.markdown('<div style="height: 30px;"></div>', unsafe_allow_html=True)
         if st.button("🚀 LANCER LE TERMINAL"):
             navigate_to('analysis')
 
     st.markdown("<br><br><br>", unsafe_allow_html=True)
 
-    # --- ARGUMENTS MARKETING (CARDS) ---
+    # --- FEATURES (STATIC) ---
     c1, c2, c3 = st.columns(3)
-
     with c1:
         st.markdown("""
         <div class="feature-card">
@@ -367,7 +342,6 @@ def show_home_page():
             <div class="feature-desc">Connexion directe aux flux boursiers mondiaux pour une réactivité milliseconde.</div>
         </div>
         """, unsafe_allow_html=True)
-
     with c2:
         st.markdown("""
         <div class="feature-card">
@@ -376,7 +350,6 @@ def show_home_page():
             <div class="feature-desc">Analyse sémantique (NLP) et modèles quantitatifs pour prédire les tendances.</div>
         </div>
         """, unsafe_allow_html=True)
-
     with c3:
         st.markdown("""
         <div class="feature-card">
