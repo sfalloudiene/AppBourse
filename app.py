@@ -30,7 +30,7 @@ with st.sidebar:
     try:
         st.image("logo_esigelec.png", width=120)
     except:
-        st.write("ESIGELEC")
+        st.markdown("### ESIGELEC")
 
     # Toggle Dark Mode
     is_dark_mode = st.toggle("🌙 Mode Sombre", value=True)
@@ -43,13 +43,15 @@ with st.sidebar:
 
         # 1. Choix de l'Action
         ACTIONS = {"TotalEnergies": "TTE.PA", "Hermès": "RMS.PA", "Dassault Systèmes": "DSY.PA",
-                   "Sopra Steria": "SOP.PA", "Airbus": "AIR.PA"}
+                   "Sopra Steria": "SOP.PA", "Airbus": "AIR.PA", "LVMH": "MC.PA", "Schneider Electric": "SU.PA"}
+
         LOGOS = {"TotalEnergies": "logo_total.png", "Hermès": "logo_hermes.png",
                  "Dassault Systèmes": "logo_dassault.png", "Sopra Steria": "logo_sopra.png",
                  "Airbus": "logo_airbus.png"}
+
         choix = st.selectbox("Actif", list(ACTIONS.keys()))
 
-        # 2. Choix de la Période (AVEC 1J et 5J)
+        # 2. Choix de la Période
         st.markdown("<br>", unsafe_allow_html=True)
         PERIOD_MAP = {
             "1 Jour": "1d",
@@ -62,8 +64,7 @@ with st.sidebar:
             "5 Ans": "5y",
             "Max": "max"
         }
-        # On met "1 An" par défaut (index 3)
-        choix_periode = st.selectbox("Période d'analyse", list(PERIOD_MAP.keys()), index=3)
+        choix_periode = st.selectbox("Période d'analyse", list(PERIOD_MAP.keys()), index=6)  # Default 2y
         selected_period = PERIOD_MAP[choix_periode]
 
         st.markdown("<br>", unsafe_allow_html=True)
@@ -71,12 +72,9 @@ with st.sidebar:
         st.caption("⏱️ SYNC : 60s")
         st_autorefresh(interval=60 * 1000, key="marketupdater")
     else:
-        # Variables vides pour la home
-        ACTIONS = {"TotalEnergies": "TTE.PA", "Hermès": "RMS.PA", "Dassault Systèmes": "DSY.PA",
-                   "Sopra Steria": "SOP.PA", "Airbus": "AIR.PA"}
-        LOGOS = {"TotalEnergies": "logo_total.png", "Hermès": "logo_hermes.png",
-                 "Dassault Systèmes": "logo_dassault.png", "Sopra Steria": "logo_sopra.png",
-                 "Airbus": "logo_airbus.png"}
+        # Variables vides pour la home pour éviter les erreurs
+        ACTIONS = {"TotalEnergies": "TTE.PA"}
+        LOGOS = {}
         choix = "TotalEnergies"
         selected_period = "1y"
 
@@ -154,20 +152,18 @@ else:
 
 
 # ==========================================
-# 3. LOGIQUE MÉTIER
+# 3. LOGIQUE MÉTIER & CALCULS
 # ==========================================
 def get_data_and_consensus(ticker, period="2y"):
     """ Récupère les données avec période et intervalle intelligents """
     stock = yf.Ticker(ticker)
 
-    # --- LOGIQUE D'INTERVALLE ---
-    # Pour 1 jour, on veut des données minute par minute (sinon 1 seul point)
     if period == "1d":
-        interval = "2m"  # 2 minutes pour avoir du détail intraday
+        interval = "2m"
     elif period == "5d":
-        interval = "15m"  # 15 minutes pour 5 jours
+        interval = "15m"
     else:
-        interval = "1d"  # Journalier pour le reste (1 mois et +)
+        interval = "1d"
 
     df = stock.history(period=period, interval=interval)
 
@@ -181,6 +177,7 @@ def get_data_and_consensus(ticker, period="2y"):
         rec_key = info.get('recommendationKey', 'none')
         target_price = info.get('targetMeanPrice', 0)
         consensus_score = 2.5
+
         if rec_key == 'strong_buy':
             consensus_score = 5
         elif rec_key == 'buy':
@@ -193,15 +190,18 @@ def get_data_and_consensus(ticker, period="2y"):
             consensus_score = 1
         elif rec_key == 'sell':
             consensus_score = 0
+
         per = info.get('trailingPE') or info.get('forwardPE', 0)
         div_rate = info.get('dividendRate')
         if div_rate is None: div_rate = info.get('trailingAnnualDividendRate', 0)
+
         if div_rate and last_price > 0:
             div_yield = div_rate / last_price
         else:
             div_yield = info.get('dividendYield', 0)
             if div_yield is None: div_yield = 0
             if div_yield > 1: div_yield = div_yield / 100
+
         fonda = {"per": per, "yield": div_yield, "div_amt": div_rate,
                  "consensus_txt": rec_key.replace('_', ' ').upper(), "consensus_score": consensus_score,
                  "target_price": target_price}
@@ -216,31 +216,38 @@ def get_fresh_news(company_name):
     feed = feedparser.parse(rss_url)
     news_list = []
     positive_words = ['hausse', 'bondit', 'record', 'achat', 'surperforme', 'contrat', 'succès', 'approbation',
-                      'dividende', 'solide']
+                      'dividende', 'solide', 'profit']
     negative_words = ['chute', 'baisse', 'perte', 'alerte', 'dette', 'procès', 'échec', 'sanction', 'démission',
-                      'faible']
+                      'faible', 'incertitude']
     time_threshold = datetime.now() - timedelta(hours=48)
     raw_sentiment = 0;
     count = 0
+
     for entry in feed.entries:
         try:
             pub_date = datetime.fromtimestamp(time.mktime(entry.published_parsed))
         except:
             continue
         if pub_date < time_threshold: continue
+
         title = entry.title;
         link = entry.link;
         color = "grey";
         score_mod = 0
         title_lower = title.lower()
+
         if any(w in title_lower for w in positive_words):
-            color = "green"; score_mod = 1
+            color = "green";
+            score_mod = 1
         elif any(w in title_lower for w in negative_words):
-            color = "red"; score_mod = -1
+            color = "red";
+            score_mod = -1
+
         raw_sentiment += score_mod;
         count += 1
         news_list.append({"title": title, "date": pub_date.strftime('%d/%m %H:%M'), "link": link, "color": color})
-        if count >= 5: break
+        if count >= 6: break
+
     if raw_sentiment > 0:
         final_news_score = 4 + (min(raw_sentiment, 2) * 0.5)
     elif raw_sentiment < 0:
@@ -251,81 +258,135 @@ def get_fresh_news(company_name):
 
 
 def calculate_indicators(df):
-    # Gestion des cas où il n'y a pas assez de données (ex: 1 jour)
-    if len(df) < 20:
-        # Si moins de 20 points, on ne peut pas calculer grand chose, on renvoie le DF tel quel pour éviter le crash
-        # On initialise les colonnes à vide ou NaN
-        df['RSI'] = 50
-        df['Upper'] = df['Close']
+    if len(df) < 50:
+        # Sécurité si pas assez de données
+        for col in ['RSI', 'Upper', 'Lower', 'SMA_200', 'SMA_50', 'MACD', 'Signal_Line']:
+            df[col] = 0
+        df['Upper'] = df['Close'];
         df['Lower'] = df['Close']
-        df['SMA_200'] = df['Close']
         return df
 
+    # 1. RSI
     delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(14).mean();
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    rs = gain / loss;
+    rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
-    df['SMA_20'] = df['Close'].rolling(20).mean();
+
+    # 2. Bollinger Bands
+    df['SMA_20'] = df['Close'].rolling(20).mean()
     df['STD_20'] = df['Close'].rolling(20).std()
-    df['Upper'] = df['SMA_20'] + (2 * df['STD_20']);
+    df['Upper'] = df['SMA_20'] + (2 * df['STD_20'])
     df['Lower'] = df['SMA_20'] - (2 * df['STD_20'])
+
+    # 3. SMA 200 (Tendance Long terme)
     df['SMA_200'] = df['Close'].rolling(200).mean()
+
+    # --- NOUVEAUX INDICATEURS ---
+
+    # 4. SMA 50 (Tendance Moyen terme)
+    df['SMA_50'] = df['Close'].rolling(50).mean()
+
+    # 5. MACD (Moving Average Convergence Divergence)
+    # EMA 12 et 26
+    ema12 = df['Close'].ewm(span=12, adjust=False).mean()
+    ema26 = df['Close'].ewm(span=26, adjust=False).mean()
+    df['MACD'] = ema12 - ema26
+    # Ligne de Signal (EMA 9 du MACD)
+    df['Signal_Line'] = df['MACD'].ewm(span=9, adjust=False).mean()
+
     return df
 
 
 def calculate_weighted_score(df, fonda, news_score):
-    if len(df) < 1: return 2.5, ["Données insuffisantes pour l'analyse technique"]
+    if len(df) < 50: return 2.5, ["Données insuffisantes pour l'analyse technique complète"]
 
-    last = df.iloc[-1];
-    reasons = [];
+    last = df.iloc[-1]
+    prev = df.iloc[-2]  # Pour voir les croisements récents
+    reasons = []
     tech_points = 0
 
-    # RSI
-    if 'RSI' in last and pd.notna(last['RSI']):
+    # --- RSI (Max 1 pt) ---
+    if pd.notna(last['RSI']):
         if last['RSI'] < 35:
-            tech_points += 1; reasons.append("Tech: RSI en zone de Survente (Rebond possible)")
+            tech_points += 1;
+            reasons.append("Tech: RSI en Survente (Rebond probable)")
         elif last['RSI'] > 70:
-            tech_points -= 1; reasons.append("Tech: RSI en zone de Surachat (Risque de baisse)")
+            tech_points -= 1;
+            reasons.append("Tech: RSI en Surachat (Correction probable)")
         else:
-            tech_points += 0.5; reasons.append(f"Tech: RSI Neutre ({int(last['RSI'])}) - Zone stable")
+            tech_points += 0.5;
+            reasons.append(f"Tech: RSI Neutre ({int(last['RSI'])})")
 
-    # Bollinger
-    if 'Lower' in last and pd.notna(last['Lower']):
+    # --- Bollinger (Max 1.5 pts) ---
+    if pd.notna(last['Lower']):
         if last['Close'] < last['Lower']:
-            tech_points += 1.5; reasons.append("Tech: Prix sous la Bollinger Basse (Signal d'Achat)")
+            tech_points += 1.5;
+            reasons.append("Tech: Prix sous Bollinger Basse (Signal Achat fort)")
         elif last['Close'] > last['Upper']:
-            tech_points -= 1; reasons.append("Tech: Prix dépasse la Bollinger Haute (Signal de Vente)")
+            tech_points -= 1;
+            reasons.append("Tech: Prix sur Bollinger Haute (Signal Vente)")
         else:
-            tech_points += 0.5; reasons.append("Tech: Prix à l'intérieur des Bandes (Normal)")
+            tech_points += 0.5;
+            reasons.append("Tech: Volatilité normale (Bandes Bollinger)")
 
-    # SMA 200 (Peut être NaN si période courte)
-    if 'SMA_200' in last and pd.notna(last['SMA_200']):
+    # --- SMA 50 & 200 (Max 1.5 pts) ---
+    if pd.notna(last['SMA_50']):
+        if last['Close'] > last['SMA_50']:
+            tech_points += 0.5;
+            reasons.append("Tech: Prix > Moyenne Mobile 50j (Hausse moyen terme)")
+        else:
+            reasons.append("Tech: Prix < Moyenne Mobile 50j (Pression baissière)")
+
+    if pd.notna(last['SMA_200']):
         if last['Close'] > last['SMA_200']:
-            tech_points += 1; reasons.append("Tech: Tendance de fond Haussière (> SMA200)")
-        else:
-            reasons.append("Tech: Tendance de fond Baissière (< SMA200)")
-    else:
-        # Si pas de SMA200 (ex: vue 1 jour), on donne un point neutre
-        tech_points += 0.5;
-        reasons.append("Tech: Données historiques insuffisantes pour Tendance Longue")
+            tech_points += 0.5;
+            reasons.append("Tech: Prix > SMA 200 (Tendance fond Haussière)")
 
-    tech_score_5 = (max(0, tech_points) / 4) * 5
+        # Golden Cross check
+        if last['SMA_50'] > last['SMA_200'] and prev['SMA_50'] <= prev['SMA_200']:
+            tech_points += 1;
+            reasons.append("Tech: 🌟 GOLDEN CROSS DÉTECTÉE (SMA 50 croise SMA 200)")
+        elif last['SMA_50'] > last['SMA_200']:
+            tech_points += 0.25;
+            reasons.append("Tech: Configuration Golden Cross active")
+
+    # --- MACD (Max 1 pt) ---
+    if pd.notna(last['MACD']):
+        if last['MACD'] > last['Signal_Line']:
+            tech_points += 1;
+            reasons.append("Tech: MACD au-dessus du Signal (Momentum Acheteur)")
+        else:
+            tech_points -= 1;
+            reasons.append("Tech: MACD sous le Signal (Momentum Vendeur)")
+
+    # Normalisation du score technique sur 5
+    # Total potentiel max ~ 5.5 points. On divise par 5.5 et remet sur 5
+    tech_score_5 = (max(0, tech_points) / 5.5) * 5
+
+    # Analyse Fondamentale
     fund_points = 0
     if fonda['per'] > 0 and fonda['per'] < 15:
-        fund_points += 1; reasons.append(f"Fonda: Action bon marché (PER {fonda['per']:.1f})")
-    elif fonda['per'] > 30:
-        fund_points -= 1; reasons.append(f"Fonda: Action chère (PER {fonda['per']:.1f})")
+        fund_points += 1;
+        reasons.append(f"Fonda: Action sous-évaluée (PER {fonda['per']:.1f})")
+    elif fonda['per'] > 35:
+        fund_points -= 1;
+        reasons.append(f"Fonda: Valorisation élevée (PER {fonda['per']:.1f})")
     else:
-        reasons.append(f"Fonda: Valorisation Standard (PER {fonda['per']:.1f})")
-    if fonda['yield'] > 0.03:
-        fund_points += 1; reasons.append(f"Fonda: Bon rendement de dividende ({fonda['yield'] * 100:.1f}%)")
-    else:
-        reasons.append(f"Fonda: Rendement faible ou nul ({fonda['yield'] * 100:.1f}%)")
+        reasons.append(f"Fonda: PER Standard ({fonda['per']:.1f})")
+
+    if fonda['yield'] > 0.035:
+        fund_points += 1;
+        reasons.append(f"Fonda: Dividende attractif ({fonda['yield'] * 100:.1f}%)")
+
     fund_score_5 = (max(0, fund_points) / 2) * 5
-    reasons.append(f"Consensus: Recommandation '{fonda['consensus_txt']}'")
+    reasons.append(f"Consensus: Analystes '{fonda['consensus_txt']}'")
+
+    # Calcul Final
+    # Tech 40%, Consensus 20%, Fonda 20%, News 20%
     final_score = (
                 (tech_score_5 * 0.40) + (fonda['consensus_score'] * 0.20) + (fund_score_5 * 0.20) + (news_score * 0.20))
+
     return round(final_score, 2), reasons
 
 
@@ -338,32 +399,17 @@ def show_home_page():
     st.markdown("""
     <div class="ticker-wrap">
         <div class="ticker">
-            <div class="ticker__item">BTC/USD <span class="up">▲ 68,450 $</span></div>
+            <div class="ticker__item">BTC/USD <span class="up">▲ 98,450 $</span></div>
             <div class="ticker__item">ETH/USD <span class="up">▲ 3,890 $</span></div>
-            <div class="ticker__item">SOL/USD <span class="down">▼ 145.2 $</span></div>
-            <div class="ticker__item">BNP/USD <span class="up">▲ 612 $</span></div>
-            <div class="ticker__item">XRP <span class="up">▲ 0.65 $</span></div>
-            <div class="ticker__item">NVIDIA <span class="up">▲ 920.5 $</span></div>
-            <div class="ticker__item">APPLE <span class="down">▼ 172.3 $</span></div>
-            <div class="ticker__item">MICROSOFT <span class="up">▲ 425.0 $</span></div>
-            <div class="ticker__item">TESLA <span class="down">▼ 175.4 $</span></div>
-            <div class="ticker__item">AMAZON <span class="up">▲ 185.1 $</span></div>
-            <div class="ticker__item">META <span class="up">▲ 510.2 $</span></div>
             <div class="ticker__item">TOTALENERGIES <span class="up">▲ 62.8 €</span></div>
-            <div class="ticker__item">LVMH <span class="down">▼ 815.4 €</span></div>
+            <div class="ticker__item">LVMH <span class="down">▼ 615.4 €</span></div>
             <div class="ticker__item">AIRBUS <span class="up">▲ 142.5 €</span></div>
-            <div class="ticker__item">HERMÈS <span class="up">▲ 2,350 €</span></div>
+            <div class="ticker__item">HERMÈS <span class="up">▲ 2,050 €</span></div>
             <div class="ticker__item">SANOFI <span class="down">▼ 88.2 €</span></div>
-            <div class="ticker__item">BNP PARIBAS <span class="up">▲ 65.9 €</span></div>
-            <div class="ticker__item">AXA <span class="up">▲ 34.5 €</span></div>
-            <div class="ticker__item">CAC 40 <span class="up">▲ 8,250</span></div>
-            <div class="ticker__item">S&P 500 <span class="up">▲ 5,300</span></div>
-            <div class="ticker__item">NASDAQ <span class="up">▲ 16,500</span></div>
-            <div class="ticker__item">GOLD <span class="up">▲ 2,410 $</span></div>
-            <div class="ticker__item">BRENT OIL <span class="down">▼ 85.4 $</span></div>
-            <div class="ticker__item">BTC/USD <span class="up">▲ 68,450 $</span></div>
-            <div class="ticker__item">ETH/USD <span class="up">▲ 3,890 $</span></div>
-            <div class="ticker__item">TOTALENERGIES <span class="up">▲ 62.8 €</span></div>
+            <div class="ticker__item">CAC 40 <span class="up">▲ 7,650</span></div>
+            <div class="ticker__item">S&P 500 <span class="up">▲ 5,900</span></div>
+            <div class="ticker__item">NASDAQ <span class="up">▲ 19,500</span></div>
+            <div class="ticker__item">GOLD <span class="up">▲ 2,610 $</span></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -376,7 +422,7 @@ def show_home_page():
         try:
             st.image("logo_esigelec.png", use_container_width=True)
         except:
-            st.warning("⚠️ Logo")
+            pass
 
     with c_hero:
         title_color = "white" if is_dark_mode else "#2c3e50"
@@ -405,32 +451,26 @@ def show_home_page():
         st.markdown("""
         <div class="feature-card">
             <div class="feature-icon">⚡</div>
-            <div class="feature-title">Temps Réel</div>
-            <div class="feature-desc">Connexion directe aux flux boursiers mondiaux pour une réactivité milliseconde.</div>
+            <div class="feature-title">Multi-Indicateurs</div>
+            <div class="feature-desc">RSI, Bollinger, MACD, SMA 50/200 combinés pour une précision maximale.</div>
         </div>
         """, unsafe_allow_html=True)
     with c2:
         st.markdown("""
         <div class="feature-card">
             <div class="feature-icon">🧠</div>
-            <div class="feature-title">Algorithmes IA</div>
-            <div class="feature-desc">Analyse sémantique (NLP) et modèles quantitatifs pour prédire les tendances.</div>
+            <div class="feature-title">Algorithme Hybride</div>
+            <div class="feature-desc">Fusionne l'analyse technique quantitative et l'analyse de sentiment (News).</div>
         </div>
         """, unsafe_allow_html=True)
     with c3:
         st.markdown("""
         <div class="feature-card">
             <div class="feature-icon">💎</div>
-            <div class="feature-title">Consensus Pro</div>
-            <div class="feature-desc">Accédez aux stratégies des plus grandes banques d'investissement.</div>
+            <div class="feature-title">Institutional Grade</div>
+            <div class="feature-desc">Visualisation professionnelle via Plotly et flux de données Yahoo Finance.</div>
         </div>
         """, unsafe_allow_html=True)
-
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
-    footer_color = "#555" if is_dark_mode else "#999"
-    st.markdown(
-        f"<p style='text-align: center; color: {footer_color}; font-size: 0.8em;'>© 2025 ESIGELEC QUANT LABS - INSTITUTIONAL GRADE ANALYTICS</p>",
-        unsafe_allow_html=True)
 
 
 def show_analysis_page():
@@ -456,7 +496,7 @@ def show_analysis_page():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    with st.spinner('Calcul des indicateurs en cours...'):
+    with st.spinner('Calcul des indicateurs MACD & SMA50 en cours...'):
         df, fonda = get_data_and_consensus(ACTIONS[choix], period=selected_period)
         df = calculate_indicators(df)
         news, news_score_5 = get_fresh_news(choix)
@@ -506,13 +546,17 @@ def show_analysis_page():
     st.markdown("<br>", unsafe_allow_html=True)
 
     # GRAPHIQUES (ADAPTATIF DARK/LIGHT)
-    tab1, tab2 = st.tabs(["📈 CHARTING AVANCÉ", "📰 FLUX D'ACTUALITÉS (48H)"])
+    tab1, tab2 = st.tabs(["📈 CHARTING COMPLET (MACD/RSI)", "📰 FLUX D'ACTUALITÉS"])
     with tab1:
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3])
-        # Couleurs adaptatives
+        # Création de 3 sous-graphiques : Prix, RSI, MACD
+        fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
+                            row_heights=[0.6, 0.2, 0.2],
+                            vertical_spacing=0.05)
+
         candle_up = '#00ff88' if is_dark_mode else '#007bff'
         candle_down = '#ff3131' if is_dark_mode else '#dc3545'
 
+        # ROW 1 : PRIX + BOLLINGER + SMA 50/200
         fig.add_trace(
             go.Candlestick(x=df.index, open=df['Open'], close=df['Close'], high=df['High'], low=df['Low'], name="Prix",
                            increasing_line_color=candle_up, decreasing_line_color=candle_down), row=1, col=1)
@@ -521,23 +565,42 @@ def show_analysis_page():
             row=1, col=1)
         fig.add_trace(
             go.Scatter(x=df.index, y=df['Lower'], line=dict(color='rgba(128,128,128,0.3)', width=1), fill='tonexty',
-                       fillcolor='rgba(128,128,128,0.1)', name="Bollinger"), row=1, col=1)
+                       fillcolor='rgba(128,128,128,0.05)', name="Bollinger"), row=1, col=1)
 
+        # SMA 200 (Cyan)
         if 'SMA_200' in df.columns and not df['SMA_200'].isnull().all():
             fig.add_trace(go.Scatter(x=df.index, y=df['SMA_200'], line=dict(color='#00f2ff', width=2), name="SMA 200"),
                           row=1, col=1)
+        # SMA 50 (Jaune)
+        if 'SMA_50' in df.columns and not df['SMA_50'].isnull().all():
+            fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], line=dict(color='#FFD700', width=1.5, dash='dash'),
+                                     name="SMA 50"), row=1, col=1)
 
+        # ROW 2 : RSI
         fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#bc13fe', width=2), name="RSI"), row=2,
                       col=1)
-        fig.add_hline(y=30, line_color="#00ff88", line_dash="dot", row=2, col=1);
+        fig.add_hline(y=30, line_color="#00ff88", line_dash="dot", row=2, col=1)
         fig.add_hline(y=70, line_color="#ff3131", line_dash="dot", row=2, col=1)
 
-        fig.update_layout(height=650, xaxis_rangeslider_visible=False,
+        # ROW 3 : MACD
+        # Histogramme
+        colors_macd = ['#00ff88' if val >= 0 else '#ff3131' for val in (df['MACD'] - df['Signal_Line'])]
+        fig.add_trace(
+            go.Bar(x=df.index, y=(df['MACD'] - df['Signal_Line']), marker_color=colors_macd, name="MACD Hist"), row=3,
+            col=1)
+        # Lignes MACD
+        fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], line=dict(color='#2962FF', width=1.5), name="MACD"), row=3,
+                      col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['Signal_Line'], line=dict(color='#FF6D00', width=1.5), name="Signal"),
+                      row=3, col=1)
+
+        fig.update_layout(height=800, xaxis_rangeslider_visible=False,
                           paper_bgcolor=graph_bg, plot_bgcolor=graph_bg,
                           font=dict(color="#aaa" if is_dark_mode else "#333"),
                           hovermode="x unified", legend=dict(bgcolor='rgba(0,0,0,0)'), template=graph_template)
-        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor=graph_grid);
-        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor=graph_grid);
+        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor=graph_grid)
+        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor=graph_grid)
+
         st.plotly_chart(fig, use_container_width=True)
 
     with tab2:
