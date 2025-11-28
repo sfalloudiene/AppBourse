@@ -9,147 +9,157 @@ import time
 from streamlit_autorefresh import st_autorefresh
 
 # ==========================================
-# 1. CONFIGURATION & STYLE (CORRIGÉ)
+# 1. CONFIGURATION
 # ==========================================
 st.set_page_config(
     page_title="ESIG'Trade Terminal",
     layout="wide",
     page_icon="⚡",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
-# --- CSS PREMIUM CENTRALISÉ ---
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-
-    /* FOND STATIC SOMBRE */
-    .stApp {
-        background: radial-gradient(circle at center top, #1a1c2e 0%, #090a0f 100%);
-        overflow-x: hidden;
-    }
-
-    /* --- TICKER TAPE (CORRECTION Z-INDEX) --- */
-    .ticker-wrap {
-        position: fixed; 
-        top: 0; 
-        left: 0; 
-        width: 100%; 
-        overflow: hidden; 
-        height: 40px; 
-        background-color: rgba(0,0,0,0.95); /* Fond presque opaque */
-        border-bottom: 1px solid #333; 
-        z-index: 999999; /* Force le passage devant tout */
-        display: block; /* S'assure qu'il est affiché */
-    }
-
-    .ticker { 
-        display: inline-block; 
-        line-height: 40px; 
-        white-space: nowrap; 
-        padding-right: 100%; 
-        box-sizing: content-box; 
-        animation: ticker 40s linear infinite; 
-    }
-
-    .ticker__item { 
-        display: inline-block; 
-        padding: 0 2rem; 
-        font-size: 0.9rem; 
-        color: #ccc; 
-        font-family: monospace; 
-        font-weight: bold; 
-    }
-
-    .up { color: #00ff88; } 
-    .down { color: #ff3131; }
-
-    @keyframes ticker { 
-        0% { transform: translate3d(0, 0, 0); } 
-        100% { transform: translate3d(-100%, 0, 0); } 
-    }
-
-    /* --- AUTRES STYLES --- */
-    /* Cartes */
-    .feature-card {
-        background: rgba(255, 255, 255, 0.03);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        border-radius: 20px;
-        padding: 30px;
-        text-align: center;
-        height: 100%;
-    }
-    .feature-icon { font-size: 3em; margin-bottom: 15px; }
-    .feature-title { font-weight: 800; font-size: 1.2em; color: white; margin-bottom: 10px; text-transform: uppercase; }
-    .feature-desc { color: #aaa; font-size: 0.9em; }
-
-    /* Bouton */
-    div.stButton > button:first-child {
-        width: 100%; border-radius: 60px; font-weight: 900; height: 5em; font-size: 1.8em;
-        text-transform: uppercase; letter-spacing: 3px; color: white; border: none;
-        background: linear-gradient(135deg, #ff3131 0%, #ff914d 100%);
-        box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.2), 0 0 30px rgba(255, 50, 50, 0.4);
-        margin-top: 20px;
-    }
-    div.stButton > button:first-child:hover { 
-        box-shadow: inset 0 0 30px rgba(255, 255, 255, 0.4), 0 0 50px rgba(255, 50, 50, 0.6);
-    }
-
-    /* Centrage Images */
-    div[data-testid="stImage"] { display: flex; justify-content: center; align-items: center; width: 100%; }
-    div[data-testid="stImage"] > img { object-fit: contain; max-width: 100%; }
-
-    /* Métriques */
-    div[data-testid="stMetricValue"] { font-size: 2.2em !important; font-weight: 800 !important; color: white; }
-    div[data-testid="stMetric"], .glass-container {
-        background: rgba(255, 255, 255, 0.03) !important;
-        backdrop-filter: blur(12px); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 20px !important;
-    }
-
-    /* Progress Bar */
-    div[data-testid="stProgress"] > div > div { background: linear-gradient(90deg, #ff3131, #ff914d, #00ff88); height: 12px; border-radius: 10px; }
-
-</style>
-""", unsafe_allow_html=True)
-
-# Gestion navigation
+# Gestion de la navigation
 if 'page' not in st.session_state: st.session_state.page = 'home'
 
 
 def navigate_to(page): st.session_state.page = page; st.rerun()
 
 
-# --- CONFIGURATION DES ACTIONS & LOGOS ---
-ACTIONS = {
-    "TotalEnergies": "TTE.PA",
-    "Hermès": "RMS.PA",
-    "Dassault Systèmes": "DSY.PA",
-    "Sopra Steria": "SOP.PA",
-    "Airbus": "AIR.PA"
-}
+# --- SIDEBAR GLOBALE & PARAMÈTRES ---
+with st.sidebar:
+    try:
+        st.image("logo_esigelec.png", width=120)
+    except:
+        st.write("ESIGELEC")
 
-LOGOS = {
-    "TotalEnergies": "logo_total.png",
-    "Hermès": "logo_hermes.png",
-    "Dassault Systèmes": "logo_dassault.png",
-    "Sopra Steria": "logo_sopra.png",
-    "Airbus": "logo_airbus.png"
-}
+    # Toggle Dark Mode
+    is_dark_mode = st.toggle("🌙 Mode Sombre", value=True)
+
+    st.divider()
+
+    # Navigation contextuelle
+    if st.session_state.page == 'analysis':
+        st.markdown("### ⚡ PARAMÈTRES")
+
+        # 1. Choix de l'Action
+        ACTIONS = {"TotalEnergies": "TTE.PA", "Hermès": "RMS.PA", "Dassault Systèmes": "DSY.PA",
+                   "Sopra Steria": "SOP.PA", "Airbus": "AIR.PA"}
+        LOGOS = {"TotalEnergies": "logo_total.png", "Hermès": "logo_hermes.png",
+                 "Dassault Systèmes": "logo_dassault.png", "Sopra Steria": "logo_sopra.png",
+                 "Airbus": "logo_airbus.png"}
+        choix = st.selectbox("Actif", list(ACTIONS.keys()))
+
+        # 2. Choix de la Période (NOUVEAU)
+        st.markdown("<br>", unsafe_allow_html=True)
+        PERIOD_MAP = {
+            "1 Mois": "1mo", "3 Mois": "3mo", "6 Mois": "6mo",
+            "1 An": "1y", "2 Ans": "2y", "5 Ans": "5y", "Max": "max"
+        }
+        choix_periode = st.selectbox("Période d'analyse", list(PERIOD_MAP.keys()), index=4)  # Par défaut 2 Ans
+        selected_period = PERIOD_MAP[choix_periode]
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("⬅ ACCUEIL"): navigate_to('home')
+        st.caption("⏱️ SYNC : 60s")
+        st_autorefresh(interval=60 * 1000, key="marketupdater")
+    else:
+        # Variables vides pour la home
+        ACTIONS = {"TotalEnergies": "TTE.PA", "Hermès": "RMS.PA", "Dassault Systèmes": "DSY.PA",
+                   "Sopra Steria": "SOP.PA", "Airbus": "AIR.PA"}
+        LOGOS = {"TotalEnergies": "logo_total.png", "Hermès": "logo_hermes.png",
+                 "Dassault Systèmes": "logo_dassault.png", "Sopra Steria": "logo_sopra.png",
+                 "Airbus": "logo_airbus.png"}
+        choix = "TotalEnergies"
+        selected_period = "2y"
+
+# ==========================================
+# 2. GESTION DES THÈMES (CSS)
+# ==========================================
+
+# CSS Commun
+common_css = """
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+
+    .ticker-wrap {
+        position: fixed; top: 0; left: 0; width: 100%; overflow: hidden; height: 40px; 
+        background-color: #000; border-bottom: 1px solid #333; z-index: 999999; display: block;
+    }
+    .ticker { display: inline-block; line-height: 40px; white-space: nowrap; padding-right: 100%; box-sizing: content-box; animation: ticker 80s linear infinite; }
+    .ticker__item { display: inline-block; padding: 0 1.5rem; font-size: 0.9rem; color: #ccc; font-family: 'Inter', monospace; font-weight: 600; }
+    .up { color: #00ff88; } .down { color: #ff3131; }
+    @keyframes ticker { 0% { transform: translate3d(0, 0, 0); } 100% { transform: translate3d(-100%, 0, 0); } }
+
+    div[data-testid="stImage"] { display: flex; justify-content: center; align-items: center; width: 100%; }
+    div[data-testid="stImage"] > img { object-fit: contain; max-width: 100%; }
+
+    div.stButton > button:first-child {
+        width: 100%; border-radius: 60px; font-weight: 900; height: 5em; font-size: 1.8em;
+        text-transform: uppercase; letter-spacing: 3px; color: white; border: none;
+        background: linear-gradient(135deg, #ff3131 0%, #ff914d 100%);
+        transition: all 0.4s; position: relative; overflow: hidden; margin-top: 20px;
+    }
+    div.stButton > button:first-child:hover { transform: scale(1.02); }
+</style>
+"""
+
+# CSS Dark
+dark_css = """
+<style>
+    .stApp { background: radial-gradient(circle at center top, #1a1c2e 0%, #090a0f 100%); }
+    h1, h2, h3, p, span, div { color: #e0e0e0; }
+    h1 { text-shadow: 0 0 20px rgba(255, 75, 75, 0.4); }
+    .feature-card { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 20px; padding: 30px; text-align: center; height: 100%; }
+    div[data-testid="stMetric"], .glass-container { background: rgba(255, 255, 255, 0.03) !important; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; padding: 20px !important; }
+    div[data-testid="stMetricValue"] { color: white; text-shadow: 0 0 10px rgba(255, 255, 255, 0.5); }
+    div[data-testid="stMetricLabel"] { color: #aaa; }
+</style>
+"""
+
+# CSS Light
+light_css = """
+<style>
+    .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
+    h1, h2, h3, p, span, div { color: #2c3e50; }
+    h1 { color: #1a1a1a !important; text-shadow: none; }
+    h3 { color: #555 !important; }
+    .feature-card { background: rgba(255, 255, 255, 0.6); border: 1px solid rgba(255, 255, 255, 0.4); box-shadow: 0 10px 30px rgba(0,0,0,0.05); border-radius: 20px; padding: 30px; text-align: center; height: 100%; }
+    div[data-testid="stMetric"], .glass-container { background: rgba(255, 255, 255, 0.8) !important; border: 1px solid white; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border-radius: 16px; padding: 20px !important; }
+    div[data-testid="stMetricValue"] { color: #1a1a1a; text-shadow: none; }
+    div[data-testid="stMetricLabel"] { color: #666; }
+    .js-plotly-plot .plotly .main-svg { background: transparent !important; }
+</style>
+"""
+
+st.markdown(common_css, unsafe_allow_html=True)
+if is_dark_mode:
+    st.markdown(dark_css, unsafe_allow_html=True)
+    graph_template = "plotly_dark"
+    graph_bg = "rgba(0,0,0,0)"
+    graph_grid = "rgba(255,255,255,0.1)"
+else:
+    st.markdown(light_css, unsafe_allow_html=True)
+    graph_template = "plotly_white"
+    graph_bg = "rgba(255,255,255,0.5)"
+    graph_grid = "rgba(0,0,0,0.1)"
 
 
 # ==========================================
-# 2. LOGIQUE MÉTIER
+# 3. LOGIQUE MÉTIER
 # ==========================================
-def get_data_and_consensus(ticker):
+def get_data_and_consensus(ticker, period="2y"):
+    """ Récupère les données avec une période dynamique """
     stock = yf.Ticker(ticker)
-    df = stock.history(period="2y")
+
+    # 1. Historique avec période variable
+    df = stock.history(period=period)
+
     if not df.empty:
         last_price = df['Close'].iloc[-1]
     else:
         last_price = 0
+
     try:
         info = stock.info
         rec_key = info.get('recommendationKey', 'none')
@@ -254,10 +264,17 @@ def calculate_weighted_score(df, fonda, news_score):
         tech_points -= 1; reasons.append("Tech: Prix dépasse la Bollinger Haute (Signal de Vente)")
     else:
         tech_points += 0.5; reasons.append("Tech: Prix à l'intérieur des Bandes (Normal)")
-    if last['Close'] > last['SMA_200']:
-        tech_points += 1; reasons.append("Tech: Tendance de fond Haussière (> SMA200)")
+
+    # Check si SMA200 existe (pas dispo si période trop courte)
+    if 'SMA_200' in last and pd.notna(last['SMA_200']):
+        if last['Close'] > last['SMA_200']:
+            tech_points += 1; reasons.append("Tech: Tendance de fond Haussière (> SMA200)")
+        else:
+            reasons.append("Tech: Tendance de fond Baissière (< SMA200)")
     else:
-        reasons.append("Tech: Tendance de fond Baissière (< SMA200)")
+        tech_points += 0.5;
+        reasons.append("Tech: Pas assez de données pour la Tendance (SMA200)")
+
     tech_score_5 = (max(0, tech_points) / 4) * 5
     fund_points = 0
     if fonda['per'] > 0 and fonda['per'] < 15:
@@ -278,35 +295,48 @@ def calculate_weighted_score(df, fonda, news_score):
 
 
 # ==========================================
-# 3. INTERFACES
+# 4. INTERFACES
 # ==========================================
 
 def show_home_page():
-    # TICKER TAPE (SEUL ÉLÉMENT ANIMÉ)
+    # TICKER TAPE
     st.markdown("""
     <div class="ticker-wrap">
         <div class="ticker">
-            <div class="ticker__item">BTC/USD <span class="up">▲ 65,400 $</span></div>
-            <div class="ticker__item">ETH/USD <span class="up">▲ 3,500 $</span></div>
-            <div class="ticker__item">TOTALENERGIES <span class="up">▲ 62.5 €</span></div>
-            <div class="ticker__item">AIRBUS <span class="down">▼ 135.2 €</span></div>
-            <div class="ticker__item">NVIDIA <span class="up">▲ 850 $</span></div>
-            <div class="ticker__item">TESLA <span class="down">▼ 175 $</span></div>
-            <div class="ticker__item">CAC 40 <span class="down">▼ 7,250</span></div>
-            <div class="ticker__item">S&P 500 <span class="up">▲ 5,100</span></div>
-            <div class="ticker__item">GOLD <span class="up">▲ 2,350 $</span></div>
-            <div class="ticker__item">BTC/USD <span class="up">▲ 65,400 $</span></div>
-            <div class="ticker__item">ETH/USD <span class="up">▲ 3,500 $</span></div>
-            <div class="ticker__item">TOTALENERGIES <span class="up">▲ 62.5 €</span></div>
+            <div class="ticker__item">BTC/USD <span class="up">▲ 68,450 $</span></div>
+            <div class="ticker__item">ETH/USD <span class="up">▲ 3,890 $</span></div>
+            <div class="ticker__item">SOL/USD <span class="down">▼ 145.2 $</span></div>
+            <div class="ticker__item">BNP/USD <span class="up">▲ 612 $</span></div>
+            <div class="ticker__item">XRP <span class="up">▲ 0.65 $</span></div>
+            <div class="ticker__item">NVIDIA <span class="up">▲ 920.5 $</span></div>
+            <div class="ticker__item">APPLE <span class="down">▼ 172.3 $</span></div>
+            <div class="ticker__item">MICROSOFT <span class="up">▲ 425.0 $</span></div>
+            <div class="ticker__item">TESLA <span class="down">▼ 175.4 $</span></div>
+            <div class="ticker__item">AMAZON <span class="up">▲ 185.1 $</span></div>
+            <div class="ticker__item">META <span class="up">▲ 510.2 $</span></div>
+            <div class="ticker__item">TOTALENERGIES <span class="up">▲ 62.8 €</span></div>
+            <div class="ticker__item">LVMH <span class="down">▼ 815.4 €</span></div>
+            <div class="ticker__item">AIRBUS <span class="up">▲ 142.5 €</span></div>
+            <div class="ticker__item">HERMÈS <span class="up">▲ 2,350 €</span></div>
+            <div class="ticker__item">SANOFI <span class="down">▼ 88.2 €</span></div>
+            <div class="ticker__item">BNP PARIBAS <span class="up">▲ 65.9 €</span></div>
+            <div class="ticker__item">AXA <span class="up">▲ 34.5 €</span></div>
+            <div class="ticker__item">CAC 40 <span class="up">▲ 8,250</span></div>
+            <div class="ticker__item">S&P 500 <span class="up">▲ 5,300</span></div>
+            <div class="ticker__item">NASDAQ <span class="up">▲ 16,500</span></div>
+            <div class="ticker__item">GOLD <span class="up">▲ 2,410 $</span></div>
+            <div class="ticker__item">BRENT OIL <span class="down">▼ 85.4 $</span></div>
+            <div class="ticker__item">BTC/USD <span class="up">▲ 68,450 $</span></div>
+            <div class="ticker__item">ETH/USD <span class="up">▲ 3,890 $</span></div>
+            <div class="ticker__item">TOTALENERGIES <span class="up">▲ 62.8 €</span></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
     st.markdown("<br><br><br><br><br>", unsafe_allow_html=True)
 
-    # --- HERO SECTION (LOGO - TITRE - BOUTON) ---
+    # HERO
     c_logo, c_hero, c_btn = st.columns([1, 3, 1], gap="medium")
-
     with c_logo:
         try:
             st.image("logo_esigelec.png", use_container_width=True)
@@ -314,12 +344,14 @@ def show_home_page():
             st.warning("⚠️ Logo")
 
     with c_hero:
-        st.markdown("""
+        title_color = "white" if is_dark_mode else "#2c3e50"
+        subtitle_color = "#ccc" if is_dark_mode else "#555"
+        st.markdown(f"""
         <div style="text-align: center;">
-            <h1 style='color: white; font-size: 4.5em; font-weight: 900; letter-spacing: -2px; margin-bottom: 5px; text-shadow: 0 0 40px rgba(255, 75, 75, 0.4); line-height: 1.1; text-transform: uppercase;'>
+            <h1 style='color: {title_color}; font-size: 4.5em; font-weight: 900; letter-spacing: -2px; margin-bottom: 5px; text-shadow: 0 0 40px rgba(255, 75, 75, 0.4); line-height: 1.1; text-transform: uppercase;'>
                 ESIG'TRADE <span style="color: #FF4B4B;">PRO</span>
             </h1>
-            <h3 style='color: #ccc; font-weight: 400; font-size: 1.2em; margin-top: 10px; letter-spacing: 2px; text-transform: uppercase;'>
+            <h3 style='color: {subtitle_color}; font-weight: 400; font-size: 1.2em; margin-top: 10px; letter-spacing: 2px; text-transform: uppercase;'>
                 L'INTELLIGENCE ARTIFICIELLE AU SERVICE DE VOTRE ALPHA
             </h3>
         </div>
@@ -332,7 +364,7 @@ def show_home_page():
 
     st.markdown("<br><br><br>", unsafe_allow_html=True)
 
-    # --- FEATURES (STATIC) ---
+    # FEATURES
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown("""
@@ -360,26 +392,14 @@ def show_home_page():
         """, unsafe_allow_html=True)
 
     st.markdown("<br><br><br>", unsafe_allow_html=True)
+    footer_color = "#555" if is_dark_mode else "#999"
     st.markdown(
-        "<p style='text-align: center; color: #555; font-size: 0.8em;'>© 2025 ESIGELEC QUANT LABS - INSTITUTIONAL GRADE ANALYTICS</p>",
+        f"<p style='text-align: center; color: {footer_color}; font-size: 0.8em;'>© 2025 ESIGELEC QUANT LABS - INSTITUTIONAL GRADE ANALYTICS</p>",
         unsafe_allow_html=True)
 
 
 def show_analysis_page():
-    with st.sidebar:
-        try:
-            st.image("logo_esigelec.png", width=120)
-        except:
-            st.write("ESIGELEC")
-        st.markdown("### ⚡ PARAMÈTRES ACTIF")
-        choix = st.selectbox("", list(ACTIONS.keys()), label_visibility="collapsed")
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("⬅ DÉCONNEXION"): navigate_to('home')
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.caption("⏱️ SYNC TEMPS RÉEL : 60s")
-        st_autorefresh(interval=60 * 1000, key="marketupdater")
-
-    # --- HEADER DASHBOARD (LOGO A GAUCHE, TITRE A DROITE) ---
+    # HEADER DASHBOARD
     c_logo, c_title = st.columns([1, 4])
 
     with c_logo:
@@ -390,9 +410,10 @@ def show_analysis_page():
             st.write("")
 
     with c_title:
+        title_color = "white" if is_dark_mode else "#2c3e50"
         st.markdown(f"""
         <div style="display: flex; align-items: center; height: 100%;">
-            <h1 style='font-size: 3.5em; margin: 0; color: white;'>
+            <h1 style='font-size: 3.5em; margin: 0; color: {title_color};'>
                 SCAN EN COURS : <span style='color:#FF4B4B'>{choix.upper()}</span>
             </h1>
         </div>
@@ -401,7 +422,9 @@ def show_analysis_page():
     st.markdown("<br>", unsafe_allow_html=True)
 
     with st.spinner('Calcul des indicateurs en cours...'):
-        df, fonda = get_data_and_consensus(ACTIONS[choix])
+        # --- PASSAGE DE LA PÉRIODE SÉLECTIONNÉE ---
+        df, fonda = get_data_and_consensus(ACTIONS[choix], period=selected_period)
+
         df = calculate_indicators(df)
         news, news_score_5 = get_fresh_news(choix)
         global_score, args = calculate_weighted_score(df, fonda, news_score_5)
@@ -450,30 +473,40 @@ def show_analysis_page():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # GRAPHIQUES
+    # GRAPHIQUES (ADAPTATIF DARK/LIGHT)
     tab1, tab2 = st.tabs(["📈 CHARTING AVANCÉ", "📰 FLUX D'ACTUALITÉS (48H)"])
     with tab1:
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3])
+        # Couleurs adaptatives
+        candle_up = '#00ff88' if is_dark_mode else '#007bff'
+        candle_down = '#ff3131' if is_dark_mode else '#dc3545'
+
         fig.add_trace(
             go.Candlestick(x=df.index, open=df['Open'], close=df['Close'], high=df['High'], low=df['Low'], name="Prix",
-                           increasing_line_color='#00ff88', decreasing_line_color='#ff3131'), row=1, col=1)
+                           increasing_line_color=candle_up, decreasing_line_color=candle_down), row=1, col=1)
         fig.add_trace(
-            go.Scatter(x=df.index, y=df['Upper'], line=dict(color='rgba(255,255,255,0.1)', width=1), showlegend=False),
+            go.Scatter(x=df.index, y=df['Upper'], line=dict(color='rgba(128,128,128,0.3)', width=1), showlegend=False),
             row=1, col=1)
         fig.add_trace(
-            go.Scatter(x=df.index, y=df['Lower'], line=dict(color='rgba(255,255,255,0.1)', width=1), fill='tonexty',
-                       fillcolor='rgba(255,255,255,0.05)', name="Bollinger"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['SMA_200'], line=dict(color='#00f2ff', width=2), name="SMA 200"),
-                      row=1, col=1)
+            go.Scatter(x=df.index, y=df['Lower'], line=dict(color='rgba(128,128,128,0.3)', width=1), fill='tonexty',
+                       fillcolor='rgba(128,128,128,0.1)', name="Bollinger"), row=1, col=1)
+
+        # On n'affiche la SMA 200 que si on a assez de données
+        if 'SMA_200' in df.columns and not df['SMA_200'].isnull().all():
+            fig.add_trace(go.Scatter(x=df.index, y=df['SMA_200'], line=dict(color='#00f2ff', width=2), name="SMA 200"),
+                          row=1, col=1)
+
         fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#bc13fe', width=2), name="RSI"), row=2,
                       col=1)
         fig.add_hline(y=30, line_color="#00ff88", line_dash="dot", row=2, col=1);
         fig.add_hline(y=70, line_color="#ff3131", line_dash="dot", row=2, col=1)
-        fig.update_layout(height=650, xaxis_rangeslider_visible=False, paper_bgcolor='rgba(0,0,0,0)',
-                          plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#aaa'), hovermode="x unified",
-                          legend=dict(bgcolor='rgba(0,0,0,0)'))
-        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='rgba(255,255,255,0.1)');
-        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='rgba(255,255,255,0.1)');
+
+        fig.update_layout(height=650, xaxis_rangeslider_visible=False,
+                          paper_bgcolor=graph_bg, plot_bgcolor=graph_bg,
+                          font=dict(color="#aaa" if is_dark_mode else "#333"),
+                          hovermode="x unified", legend=dict(bgcolor='rgba(0,0,0,0)'), template=graph_template)
+        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor=graph_grid);
+        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor=graph_grid);
         st.plotly_chart(fig, use_container_width=True)
 
     with tab2:
@@ -481,9 +514,10 @@ def show_analysis_page():
             st.info("Aucun signal détecté sur les dernières 48h.")
         else:
             for n in news:
+                title_col = "white" if is_dark_mode else "#2c3e50"
                 st.markdown(f"""
                 <div class="glass-container" style="padding: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                    <div><a href="{n['link']}" target="_blank" style="text-decoration: none; color: white; font-weight: bold; font-size: 1.1em;">{n['title']}</a><br><span style="color: #888; font-size: 0.8em;">📅 {n['date']}</span></div>
+                    <div><a href="{n['link']}" target="_blank" style="text-decoration: none; color: {title_col}; font-weight: bold; font-size: 1.1em;">{n['title']}</a><br><span style="color: #888; font-size: 0.8em;">📅 {n['date']}</span></div>
                     <div style="font-weight: bold; color: {'#00ff88' if n['color'] == 'green' else '#ff3131' if n['color'] == 'red' else '#888'};">{'POSITIF ▲' if n['color'] == 'green' else 'NÉGATIF ▼' if n['color'] == 'red' else 'NEUTRE ■'}</div>
                 </div>
                 """, unsafe_allow_html=True)
