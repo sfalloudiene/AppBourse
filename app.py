@@ -49,13 +49,21 @@ with st.sidebar:
                  "Airbus": "logo_airbus.png"}
         choix = st.selectbox("Actif", list(ACTIONS.keys()))
 
-        # 2. Choix de la Période (NOUVEAU)
+        # 2. Choix de la Période (AVEC 1J et 5J)
         st.markdown("<br>", unsafe_allow_html=True)
         PERIOD_MAP = {
-            "1 Mois": "1mo", "3 Mois": "3mo", "6 Mois": "6mo",
-            "1 An": "1y", "2 Ans": "2y", "5 Ans": "5y", "Max": "max"
+            "1 Jour": "1d",
+            "5 Jours": "5d",
+            "1 Mois": "1mo",
+            "3 Mois": "3mo",
+            "6 Mois": "6mo",
+            "1 An": "1y",
+            "2 Ans": "2y",
+            "5 Ans": "5y",
+            "Max": "max"
         }
-        choix_periode = st.selectbox("Période d'analyse", list(PERIOD_MAP.keys()), index=4)  # Par défaut 2 Ans
+        # On met "1 An" par défaut (index 3)
+        choix_periode = st.selectbox("Période d'analyse", list(PERIOD_MAP.keys()), index=3)
         selected_period = PERIOD_MAP[choix_periode]
 
         st.markdown("<br>", unsafe_allow_html=True)
@@ -70,7 +78,7 @@ with st.sidebar:
                  "Dassault Systèmes": "logo_dassault.png", "Sopra Steria": "logo_sopra.png",
                  "Airbus": "logo_airbus.png"}
         choix = "TotalEnergies"
-        selected_period = "2y"
+        selected_period = "1y"
 
 # ==========================================
 # 2. GESTION DES THÈMES (CSS)
@@ -149,11 +157,19 @@ else:
 # 3. LOGIQUE MÉTIER
 # ==========================================
 def get_data_and_consensus(ticker, period="2y"):
-    """ Récupère les données avec une période dynamique """
+    """ Récupère les données avec période et intervalle intelligents """
     stock = yf.Ticker(ticker)
 
-    # 1. Historique avec période variable
-    df = stock.history(period=period)
+    # --- LOGIQUE D'INTERVALLE ---
+    # Pour 1 jour, on veut des données minute par minute (sinon 1 seul point)
+    if period == "1d":
+        interval = "2m"  # 2 minutes pour avoir du détail intraday
+    elif period == "5d":
+        interval = "15m"  # 15 minutes pour 5 jours
+    else:
+        interval = "1d"  # Journalier pour le reste (1 mois et +)
+
+    df = stock.history(period=period, interval=interval)
 
     if not df.empty:
         last_price = df['Close'].iloc[-1]
@@ -235,6 +251,16 @@ def get_fresh_news(company_name):
 
 
 def calculate_indicators(df):
+    # Gestion des cas où il n'y a pas assez de données (ex: 1 jour)
+    if len(df) < 20:
+        # Si moins de 20 points, on ne peut pas calculer grand chose, on renvoie le DF tel quel pour éviter le crash
+        # On initialise les colonnes à vide ou NaN
+        df['RSI'] = 50
+        df['Upper'] = df['Close']
+        df['Lower'] = df['Close']
+        df['SMA_200'] = df['Close']
+        return df
+
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean();
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -249,31 +275,40 @@ def calculate_indicators(df):
 
 
 def calculate_weighted_score(df, fonda, news_score):
+    if len(df) < 1: return 2.5, ["Données insuffisantes pour l'analyse technique"]
+
     last = df.iloc[-1];
     reasons = [];
     tech_points = 0
-    if last['RSI'] < 35:
-        tech_points += 1; reasons.append("Tech: RSI en zone de Survente (Rebond possible)")
-    elif last['RSI'] > 70:
-        tech_points -= 1; reasons.append("Tech: RSI en zone de Surachat (Risque de baisse)")
-    else:
-        tech_points += 0.5; reasons.append(f"Tech: RSI Neutre ({int(last['RSI'])}) - Zone stable")
-    if last['Close'] < last['Lower']:
-        tech_points += 1.5; reasons.append("Tech: Prix sous la Bollinger Basse (Signal d'Achat)")
-    elif last['Close'] > last['Upper']:
-        tech_points -= 1; reasons.append("Tech: Prix dépasse la Bollinger Haute (Signal de Vente)")
-    else:
-        tech_points += 0.5; reasons.append("Tech: Prix à l'intérieur des Bandes (Normal)")
 
-    # Check si SMA200 existe (pas dispo si période trop courte)
+    # RSI
+    if 'RSI' in last and pd.notna(last['RSI']):
+        if last['RSI'] < 35:
+            tech_points += 1; reasons.append("Tech: RSI en zone de Survente (Rebond possible)")
+        elif last['RSI'] > 70:
+            tech_points -= 1; reasons.append("Tech: RSI en zone de Surachat (Risque de baisse)")
+        else:
+            tech_points += 0.5; reasons.append(f"Tech: RSI Neutre ({int(last['RSI'])}) - Zone stable")
+
+    # Bollinger
+    if 'Lower' in last and pd.notna(last['Lower']):
+        if last['Close'] < last['Lower']:
+            tech_points += 1.5; reasons.append("Tech: Prix sous la Bollinger Basse (Signal d'Achat)")
+        elif last['Close'] > last['Upper']:
+            tech_points -= 1; reasons.append("Tech: Prix dépasse la Bollinger Haute (Signal de Vente)")
+        else:
+            tech_points += 0.5; reasons.append("Tech: Prix à l'intérieur des Bandes (Normal)")
+
+    # SMA 200 (Peut être NaN si période courte)
     if 'SMA_200' in last and pd.notna(last['SMA_200']):
         if last['Close'] > last['SMA_200']:
             tech_points += 1; reasons.append("Tech: Tendance de fond Haussière (> SMA200)")
         else:
             reasons.append("Tech: Tendance de fond Baissière (< SMA200)")
     else:
+        # Si pas de SMA200 (ex: vue 1 jour), on donne un point neutre
         tech_points += 0.5;
-        reasons.append("Tech: Pas assez de données pour la Tendance (SMA200)")
+        reasons.append("Tech: Données historiques insuffisantes pour Tendance Longue")
 
     tech_score_5 = (max(0, tech_points) / 4) * 5
     fund_points = 0
@@ -422,9 +457,7 @@ def show_analysis_page():
     st.markdown("<br>", unsafe_allow_html=True)
 
     with st.spinner('Calcul des indicateurs en cours...'):
-        # --- PASSAGE DE LA PÉRIODE SÉLECTIONNÉE ---
         df, fonda = get_data_and_consensus(ACTIONS[choix], period=selected_period)
-
         df = calculate_indicators(df)
         news, news_score_5 = get_fresh_news(choix)
         global_score, args = calculate_weighted_score(df, fonda, news_score_5)
@@ -491,7 +524,6 @@ def show_analysis_page():
             go.Scatter(x=df.index, y=df['Lower'], line=dict(color='rgba(128,128,128,0.3)', width=1), fill='tonexty',
                        fillcolor='rgba(128,128,128,0.1)', name="Bollinger"), row=1, col=1)
 
-        # On n'affiche la SMA 200 que si on a assez de données
         if 'SMA_200' in df.columns and not df['SMA_200'].isnull().all():
             fig.add_trace(go.Scatter(x=df.index, y=df['SMA_200'], line=dict(color='#00f2ff', width=2), name="SMA 200"),
                           row=1, col=1)
